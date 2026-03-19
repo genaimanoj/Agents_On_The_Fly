@@ -20,9 +20,11 @@ class ICTM:
     context: str = ""
     tools: list[str] = field(default_factory=list)
     model_tier: str = "balanced"
+    sandboxed: bool = False  # Run sub-agent in an isolated temp environment
 
     def summary(self) -> str:
+        sbx = " [SANDBOXED]" if self.sandboxed else ""
         return (
             f"ICTM(model={self.model_tier}, tools={self.tools}, "
-            f"instruction={self.instruction[:80]}...)"
+            f"instruction={self.instruction[:80]}...){sbx}"
         )
