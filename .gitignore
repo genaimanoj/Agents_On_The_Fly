@@ -1,0 +1,32 @@
+# Environment & secrets
+.env
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Workspace artifacts (generated at runtime)
+workspace/reports/
+workspace/trajectories/
+workspace/logs/
+workspace/*.md
+!workspace/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Claude Code
+.claude/

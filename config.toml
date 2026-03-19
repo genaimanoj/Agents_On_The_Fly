@@ -1,0 +1,123 @@
+# ============================================================
+# FlyAgent Configuration — ICTM-based Deep Research Agent
+# ============================================================
+# Every SubAgent is dynamically created with a 4-tuple:
+#   φ = ⟨Instruction, Context, Tools, Model⟩
+# The orchestrator synthesizes these tuples on-the-fly.
+# ============================================================
+
+[project]
+name = "deep-research-agent"
+workspace_dir = "./workspace"
+
+# ============================================================
+# Orchestrator (MainAgent) Settings
+# ============================================================
+[orchestrator]
+model_tier = "balanced"          # Which model tier the orchestrator uses
+max_attempts = 12                # Max orchestration loops
+max_concurrent_subagents = 3     # Parallel subagent execution
+
+# ============================================================
+# Model Tiers — mapped to concrete Google Gemini models
+# The orchestrator picks a tier per subtask based on complexity
+# ============================================================
+[models.fast]
+provider = "google"
+model = "gemini-2.0-flash"
+temperature = 0.2
+max_output_tokens = 4096
+
+[models.balanced]
+provider = "google"
+model = "gemini-2.5-flash"
+temperature = 0.4
+max_output_tokens = 8192
+
+[models.powerful]
+provider = "google"
+model = "gemini-2.5-pro"
+temperature = 0.6
+max_output_tokens = 16384
+
+# ============================================================
+# Tool Configuration — each tool can be toggled and tuned
+# ============================================================
+[tools.web_search]
+enabled = true
+max_results = 8
+region = "wt-wt"                 # DuckDuckGo region (wt-wt = no region)
+
+[tools.web_fetch]
+enabled = true
+max_content_length = 15000       # Truncate fetched pages to this many chars
+timeout_seconds = 30
+user_agent = "FlyAgent/0.1 Research Bot"
+
+[tools.arxiv_search]
+enabled = true
+max_results = 8
+sort_by = "relevance"            # relevance | lastUpdatedDate | submittedDate
+
+[tools.wikipedia_search]
+enabled = true
+sentences = 10                   # Number of sentences in summary
+
+[tools.news_search]
+enabled = true
+max_results = 8
+timelimit = "m"                  # d=day, w=week, m=month
+
+[tools.file_read]
+enabled = true
+allowed_dirs = ["./workspace"]
+max_file_size_kb = 512
+
+[tools.file_write]
+enabled = true
+output_dir = "./workspace"
+
+[tools.python_exec]
+enabled = true
+timeout_seconds = 30
+
+[tools.get_datetime]
+enabled = true
+
+# ============================================================
+# SubAgent Defaults
+# ============================================================
+[subagent]
+max_steps = 20                   # Max tool calls per subagent run
+timeout_seconds = 300            # Hard timeout per subagent
+
+# ============================================================
+# Output Settings
+# ============================================================
+[output]
+format = "markdown"              # markdown | json
+save_trajectory = true
+trajectory_dir = "./workspace/trajectories"
+save_final_report = true
+report_dir = "./workspace"
+verbose = true                   # Show detailed orchestration logs
+
+# ============================================================
+# Server Settings (API)
+# ============================================================
+[server]
+host = "0.0.0.0"
+port = 8000
+cors_origins = ["*"]             # Allowed CORS origins (* = all)
+ui_port = 3000                   # Port for the UI dev server
+
+# ============================================================
+# Logging — OTEL-compliant structured logging
+# ============================================================
+[logging]
+level = "INFO"                   # DEBUG | INFO | WARNING | ERROR
+format = "json"                  # json (OTEL) | text (human-readable)
+log_to_console = true
+log_to_file = true
+log_file = "./workspace/logs/flyagent.log"
+service_name = "flyagent"

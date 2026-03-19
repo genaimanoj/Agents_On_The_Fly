@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en" :class="{ 'dark': darkMode }" x-data="{ darkMode: localStorage.getItem('theme') !== 'light' }">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FlyAgent — ICTM Research Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            surface: {
+              50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 300: '#cbd5e1',
+              700: '#1e293b', 800: '#111827', 900: '#0b1120',
+            },
+            accent: { DEFAULT: '#3b82f6', light: '#60a5fa', dark: '#2563eb' },
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .fade-in { animation: fadeIn 0.3s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .pulse-dot { animation: pulse-dot 1.2s infinite; }
+    .log-scroll::-webkit-scrollbar { width: 6px; }
+    .log-scroll::-webkit-scrollbar-thumb { border-radius: 3px; }
+    .dark .log-scroll::-webkit-scrollbar-thumb { background: #475569; }
+    .log-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; }
+
+    /* Markdown — dark */
+    .dark .markdown-body h1 { font-size: 1.5em; font-weight: 700; margin-top: 1em; color: #f1f5f9; }
+    .dark .markdown-body h2 { font-size: 1.25em; font-weight: 600; margin-top: 0.8em; color: #93c5fd; }
+    .dark .markdown-body h3 { font-size: 1.1em; font-weight: 600; margin-top: 0.6em; color: #d1d5db; }
+    .dark .markdown-body p { margin: 0.5em 0; }
+    .dark .markdown-body ul { list-style: disc; margin-left: 1.5em; }
+    .dark .markdown-body ol { list-style: decimal; margin-left: 1.5em; }
+    .dark .markdown-body li { margin: 0.2em 0; }
+    .dark .markdown-body code { background: #1e293b; padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; }
+    .dark .markdown-body pre { background: #0f172a; padding: 1em; border-radius: 8px; overflow-x: auto; margin: 0.8em 0; }
+    .dark .markdown-body a { color: #60a5fa; text-decoration: underline; }
+    .dark .markdown-body blockquote { border-left: 3px solid #475569; padding-left: 1em; color: #94a3b8; }
+    .dark .markdown-body table { width: 100%; border-collapse: collapse; margin: 0.8em 0; font-size: 0.9em; }
+    .dark .markdown-body th { background: #1e293b; padding: 0.5em 0.75em; text-align: left; border-bottom: 2px solid #334155; font-weight: 600; }
+    .dark .markdown-body td { padding: 0.5em 0.75em; border-bottom: 1px solid #1e293b; }
+    .dark .markdown-body tr:hover td { background: #111827; }
+    .dark .markdown-body strong { color: #e2e8f0; }
+
+    /* Markdown — light */
+    .markdown-body h1 { font-size: 1.5em; font-weight: 700; margin-top: 1em; color: #0f172a; }
+    .markdown-body h2 { font-size: 1.25em; font-weight: 600; margin-top: 0.8em; color: #1e40af; }
+    .markdown-body h3 { font-size: 1.1em; font-weight: 600; margin-top: 0.6em; color: #334155; }
+    .markdown-body p { margin: 0.5em 0; }
+    .markdown-body ul { list-style: disc; margin-left: 1.5em; }
+    .markdown-body ol { list-style: decimal; margin-left: 1.5em; }
+    .markdown-body li { margin: 0.2em 0; }
+    .markdown-body code { background: #f1f5f9; padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; color: #0f172a; }
+    .markdown-body pre { background: #f8fafc; padding: 1em; border-radius: 8px; overflow-x: auto; margin: 0.8em 0; border: 1px solid #e2e8f0; }
+    .markdown-body a { color: #2563eb; text-decoration: underline; }
+    .markdown-body blockquote { border-left: 3px solid #cbd5e1; padding-left: 1em; color: #64748b; }
+    .markdown-body table { width: 100%; border-collapse: collapse; margin: 0.8em 0; font-size: 0.9em; }
+    .markdown-body th { background: #f1f5f9; padding: 0.5em 0.75em; text-align: left; border-bottom: 2px solid #cbd5e1; font-weight: 600; }
+    .markdown-body td { padding: 0.5em 0.75em; border-bottom: 1px solid #e2e8f0; }
+    .markdown-body tr:hover td { background: #f8fafc; }
+    .markdown-body strong { color: #0f172a; }
+  </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden transition-colors duration-200
+             dark:bg-surface-900 dark:text-gray-100
+             bg-white text-gray-900"
+      x-data="flyagent()">
+
+  <!-- Header -->
+  <header class="border-b px-6 py-3 flex items-center justify-between shrink-0 transition-colors
+                  dark:bg-surface-800 dark:border-surface-700
+                  bg-white border-gray-200">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-accent flex items-center justify-center text-white font-bold text-sm">F</div>
+      <div>
+        <h1 class="text-lg font-semibold dark:text-white text-gray-900">FlyAgent</h1>
+        <p class="text-xs dark:text-gray-400 text-gray-500">ICTM-based Deep Research Agent</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="text-xs px-2 py-1 rounded dark:bg-surface-700 dark:text-gray-400 bg-gray-100 text-gray-500"
+        x-text="'API: ' + apiUrl"></span>
+      <button @click="showConfig = true"
+        class="px-3 py-1.5 text-sm rounded-lg transition
+               dark:bg-surface-700 dark:hover:bg-surface-700/80 dark:text-gray-300
+               bg-gray-100 hover:bg-gray-200 text-gray-600">
+        Config
+      </button>
+      <!-- Dark/Light toggle -->
+      <button @click="darkMode = !darkMode; localStorage.setItem('theme', darkMode ? 'dark' : 'light')"
+        class="w-9 h-9 rounded-lg flex items-center justify-center transition
+               dark:bg-surface-700 dark:hover:bg-surface-700/80 dark:text-yellow-300
+               bg-gray-100 hover:bg-gray-200 text-gray-600"
+        :title="darkMode ? 'Switch to light mode' : 'Switch to dark mode'">
+        <template x-if="darkMode">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"/></svg>
+        </template>
+        <template x-if="!darkMode">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/></svg>
+        </template>
+      </button>
+    </div>
+  </header>
+
+  <!-- Query Bar -->
+  <div class="border-b px-6 py-4 shrink-0 transition-colors
+               dark:bg-surface-800 dark:border-surface-700
+               bg-white border-gray-200">
+    <form @submit.prevent="startResearch" class="flex gap-3">
+      <input type="text" x-model="query" placeholder="Enter your research query..."
+        :disabled="isRunning"
+        class="flex-1 px-4 py-2.5 rounded-lg border text-sm
+               focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent disabled:opacity-50 transition-colors
+               dark:bg-surface-900 dark:border-surface-700 dark:text-white dark:placeholder-gray-500
+               bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-400">
+      <button type="submit" :disabled="isRunning || !query.trim()"
+        class="px-6 py-2.5 rounded-lg bg-accent hover:bg-accent-dark text-white font-medium text-sm
+               disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-2">
+        <template x-if="isRunning">
+          <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+        </template>
+        <span x-text="isRunning ? 'Researching...' : 'Research'"></span>
+      </button>
+    </form>
+  </div>
+
+  <!-- Main Content -->
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- Left: Agent Pipeline -->
+    <div class="flex-1 overflow-y-auto p-5 space-y-4" id="pipeline">
+
+      <!-- Orchestrator Card -->
+      <template x-if="orchestrator">
+        <div class="rounded-xl border p-4 fade-in transition-colors
+                    dark:bg-surface-800 dark:border-surface-700
+                    bg-white border-gray-200 shadow-sm">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 rounded-full bg-purple-500/20 flex items-center justify-center">
+                <span class="text-purple-400 text-xs font-bold">O</span>
+              </div>
+              <span class="font-semibold text-sm text-purple-400 dark:text-purple-300">Orchestrator</span>
+            </div>
+            <span class="text-xs px-2 py-0.5 rounded-full"
+              :class="orchestrator.status === 'running'
+                ? 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400'
+                : 'bg-green-500/20 text-green-600 dark:text-green-400'"
+              x-text="orchestrator.status"></span>
+          </div>
+          <div class="grid grid-cols-3 gap-3 text-xs">
+            <div class="rounded-lg p-2 dark:bg-surface-900 bg-gray-50">
+              <div class="dark:text-gray-500 text-gray-400">Model</div>
+              <div class="dark:text-gray-200 text-gray-700 mt-0.5" x-text="orchestrator.model"></div>
+            </div>
+            <div class="rounded-lg p-2 dark:bg-surface-900 bg-gray-50">
+              <div class="dark:text-gray-500 text-gray-400">Attempt</div>
+              <div class="dark:text-gray-200 text-gray-700 mt-0.5" x-text="orchestrator.attempt + '/' + orchestrator.maxAttempts"></div>
+            </div>
+            <div class="rounded-lg p-2 dark:bg-surface-900 bg-gray-50">
+              <div class="dark:text-gray-500 text-gray-400">SubAgents</div>
+              <div class="dark:text-gray-200 text-gray-700 mt-0.5" x-text="subagents.length"></div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Connection line -->
+      <template x-if="subagents.length > 0">
+        <div class="flex justify-center"><div class="w-0.5 h-4 dark:bg-surface-700 bg-gray-200"></div></div>
+      </template>
+
+      <!-- SubAgent Cards -->
+      <template x-for="agent in subagents" :key="agent.id">
+        <div class="rounded-xl border p-4 fade-in transition-colors
+                    dark:bg-surface-800 dark:border-surface-700
+                    bg-white border-gray-200 shadow-sm">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
+                :class="agentStatusClass(agent.status, 'icon')">
+                <span x-text="'#' + agent.id"></span>
+              </div>
+              <span class="font-semibold text-sm text-blue-500 dark:text-blue-300">SubAgent</span>
+              <span class="text-xs dark:text-gray-500 text-gray-400" x-text="'(' + agent.modelTier + ')'"></span>
+            </div>
+            <div class="flex items-center gap-2">
+              <template x-if="agent.status === 'running'">
+                <span class="w-2 h-2 rounded-full bg-blue-400 pulse-dot"></span>
+              </template>
+              <span class="text-xs px-2 py-0.5 rounded-full"
+                :class="agentStatusClass(agent.status, 'badge')"
+                x-text="agentStatusLabel(agent.status)"></span>
+            </div>
+          </div>
+
+          <!-- Task instruction -->
+          <p class="text-sm dark:text-gray-300 text-gray-600 mb-3 leading-relaxed" x-text="agent.instruction"></p>
+
+          <!-- Tools -->
+          <div class="flex flex-wrap gap-2 mb-3">
+            <template x-for="tool in agent.tools" :key="tool">
+              <span class="text-xs px-2 py-0.5 rounded dark:bg-surface-900 dark:text-cyan-400 bg-blue-50 text-blue-600"
+                x-text="tool"></span>
+            </template>
+          </div>
+
+          <!-- Last action -->
+          <template x-if="agent.lastAction">
+            <div class="flex items-center gap-2 mb-3 text-xs">
+              <span class="dark:text-gray-500 text-gray-400">Last action:</span>
+              <span class="px-1.5 py-0.5 rounded dark:bg-surface-900 dark:text-emerald-400 bg-emerald-50 text-emerald-600 font-mono"
+                x-text="agent.lastAction"></span>
+            </div>
+          </template>
+
+          <!-- Progress bar -->
+          <div class="flex items-center gap-3 text-xs dark:text-gray-500 text-gray-400">
+            <span x-text="'Steps: ' + agent.step + '/' + agent.maxSteps"></span>
+            <div class="flex-1 h-1.5 rounded-full overflow-hidden dark:bg-surface-900 bg-gray-100">
+              <div class="h-full rounded-full transition-all duration-300"
+                :class="agent.status === 'running' ? 'bg-blue-500' : 'bg-accent'"
+                :style="'width:' + (agent.step / agent.maxSteps * 100) + '%'"></div>
+            </div>
+            <span x-show="agent.elapsed" x-text="agent.elapsed.toFixed(1) + 's'"></span>
+          </div>
+
+          <!-- Summary (when done) -->
+          <template x-if="agent.summary">
+            <p class="mt-3 text-xs rounded-lg p-2
+                       dark:text-gray-400 dark:bg-surface-900
+                       text-gray-500 bg-gray-50"
+              x-text="agent.summary"></p>
+          </template>
+        </div>
+      </template>
+
+      <!-- Report Panel -->
+      <template x-if="report">
+        <div class="rounded-xl border p-5 fade-in transition-colors
+                    dark:bg-surface-800 dark:border-green-500/30
+                    bg-white border-green-200 shadow-sm">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2">
+              <span class="text-green-500 text-lg">&#10003;</span>
+              <span class="font-semibold text-green-600 dark:text-green-300">Research Report</span>
+            </div>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-600 dark:text-green-400"
+              x-text="'Confidence: ' + confidence"></span>
+          </div>
+          <div class="markdown-body text-sm leading-relaxed dark:text-gray-200 text-gray-700"
+            x-html="renderedReport"></div>
+          <div class="mt-4 pt-3 border-t flex items-center gap-4 text-xs
+                      dark:border-surface-700 dark:text-gray-500
+                      border-gray-200 text-gray-400">
+            <span x-text="stats.totalAttempts + ' orchestrator steps'"></span>
+            <span x-text="stats.subagentsSpawned + ' subagents'"></span>
+            <span x-text="stats.elapsed.toFixed(1) + 's total'"></span>
+          </div>
+        </div>
+      </template>
+
+      <!-- Empty state -->
+      <template x-if="!orchestrator && !report">
+        <div class="flex flex-col items-center justify-center h-full dark:text-gray-600 text-gray-400">
+          <div class="text-4xl mb-4">&#128300;</div>
+          <p class="text-lg">Enter a research query to begin</p>
+          <p class="text-sm mt-1">The orchestrator will create specialized SubAgents on the fly</p>
+        </div>
+      </template>
+    </div>
+
+    <!-- Right: Logs Panel -->
+    <div class="border-l flex flex-col transition-all duration-300
+                dark:border-surface-700 border-gray-200"
+      :class="showLogs ? 'w-[420px]' : 'w-10'">
+
+      <!-- Logs toggle -->
+      <button @click="showLogs = !showLogs"
+        class="shrink-0 px-3 py-2 border-b text-xs transition flex items-center gap-1
+               dark:bg-surface-800 dark:border-surface-700 dark:text-gray-400 dark:hover:text-white
+               bg-white border-gray-200 text-gray-500 hover:text-gray-900">
+        <span x-show="showLogs">Logs</span>
+        <span x-show="!showLogs" style="writing-mode: vertical-rl;">Logs</span>
+      </button>
+
+      <!-- Log entries -->
+      <div x-show="showLogs" class="flex-1 overflow-y-auto p-3 space-y-1 log-scroll
+                                     dark:bg-surface-900 bg-gray-50" x-ref="logPanel">
+
+        <!-- Filter -->
+        <div class="flex gap-1 mb-2 sticky top-0 pb-2 z-10 dark:bg-surface-900 bg-gray-50">
+          <template x-for="lvl in ['ALL','INFO','WARN','ERROR']" :key="lvl">
+            <button @click="logFilter = lvl" class="text-xs px-2 py-0.5 rounded transition"
+              :class="logFilter === lvl
+                ? 'bg-accent text-white'
+                : 'dark:bg-surface-700 dark:text-gray-400 dark:hover:bg-surface-700/80 bg-gray-200 text-gray-500 hover:bg-gray-300'"
+              x-text="lvl"></button>
+          </template>
+          <button @click="logs = []"
+            class="ml-auto text-xs px-2 py-0.5 rounded transition
+                   dark:bg-surface-700 dark:text-gray-500 dark:hover:text-red-400
+                   bg-gray-200 text-gray-400 hover:text-red-500">
+            Clear
+          </button>
+        </div>
+
+        <template x-for="(log, i) in filteredLogs" :key="i">
+          <div class="text-xs font-mono leading-relaxed py-0.5 border-b dark:border-surface-800 border-gray-100">
+            <span class="dark:text-gray-600 text-gray-400" x-text="log.time"></span>
+            <span class="ml-1 font-semibold"
+              :class="{
+                'text-blue-500 dark:text-blue-400': log.level === 'INFO',
+                'text-yellow-600 dark:text-yellow-400': log.level === 'WARN' || log.level === 'WARNING',
+                'text-red-500 dark:text-red-400': log.level === 'ERROR',
+                'text-gray-400 dark:text-gray-500': log.level === 'DEBUG',
+              }"
+              x-text="log.level"></span>
+            <span class="ml-1 dark:text-gray-300 text-gray-600" x-text="log.message"></span>
+          </div>
+        </template>
+
+        <template x-if="logs.length === 0">
+          <p class="text-xs dark:text-gray-600 text-gray-400 text-center mt-8">No logs yet</p>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- Config Modal -->
+  <template x-if="showConfig">
+    <div class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" @click.self="showConfig = false" x-cloak>
+      <div class="rounded-2xl border w-[640px] max-h-[80vh] overflow-y-auto p-6 transition-colors
+                  dark:bg-surface-800 dark:border-surface-700
+                  bg-white border-gray-200 shadow-xl">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-lg font-semibold dark:text-white text-gray-900">Configuration</h2>
+          <button @click="showConfig = false" class="dark:text-gray-500 dark:hover:text-white text-gray-400 hover:text-gray-900 text-xl">&times;</button>
+        </div>
+
+        <!-- Orchestrator -->
+        <section class="mb-6">
+          <h3 class="text-sm font-semibold text-purple-500 dark:text-purple-300 mb-3">Orchestrator</h3>
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="text-xs dark:text-gray-500 text-gray-400">Model Tier</label>
+              <select x-model="configForm.orchestrator.model_tier"
+                class="w-full mt-1 px-2 py-1.5 rounded border text-sm transition-colors
+                       dark:bg-surface-900 dark:border-surface-700 dark:text-white
+                       bg-gray-50 border-gray-300 text-gray-900">
+                <option value="fast">fast</option>
+                <option value="balanced">balanced</option>
+                <option value="powerful">powerful</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs dark:text-gray-500 text-gray-400">Max Attempts</label>
+              <input type="number" x-model.number="configForm.orchestrator.max_attempts"
+                class="w-full mt-1 px-2 py-1.5 rounded border text-sm transition-colors
+                       dark:bg-surface-900 dark:border-surface-700 dark:text-white
+                       bg-gray-50 border-gray-300 text-gray-900">
+            </div>
+            <div>
+              <label class="text-xs dark:text-gray-500 text-gray-400">Max Concurrent</label>
+              <input type="number" x-model.number="configForm.orchestrator.max_concurrent_subagents"
+                class="w-full mt-1 px-2 py-1.5 rounded border text-sm transition-colors
+                       dark:bg-surface-900 dark:border-surface-700 dark:text-white
+                       bg-gray-50 border-gray-300 text-gray-900">
+            </div>
+          </div>
+        </section>
+
+        <!-- SubAgent -->
+        <section class="mb-6">
+          <h3 class="text-sm font-semibold text-blue-500 dark:text-blue-300 mb-3">SubAgent Defaults</h3>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs dark:text-gray-500 text-gray-400">Max Steps</label>
+              <input type="number" x-model.number="configForm.subagent.max_steps"
+                class="w-full mt-1 px-2 py-1.5 rounded border text-sm transition-colors
+                       dark:bg-surface-900 dark:border-surface-700 dark:text-white
+                       bg-gray-50 border-gray-300 text-gray-900">
+            </div>
+            <div>
+              <label class="text-xs dark:text-gray-500 text-gray-400">Timeout (seconds)</label>
+              <input type="number" x-model.number="configForm.subagent.timeout_seconds"
+                class="w-full mt-1 px-2 py-1.5 rounded border text-sm transition-colors
+                       dark:bg-surface-900 dark:border-surface-700 dark:text-white
+                       bg-gray-50 border-gray-300 text-gray-900">
+            </div>
+          </div>
+        </section>
+
+        <!-- Models -->
+        <section class="mb-6">
+          <h3 class="text-sm font-semibold text-green-500 dark:text-green-300 mb-3">Model Tiers</h3>
+          <template x-for="tier in ['fast', 'balanced', 'powerful']" :key="tier">
+            <div class="mb-3 rounded-lg p-3 dark:bg-surface-900 bg-gray-50">
+              <div class="text-xs font-semibold dark:text-gray-400 text-gray-500 mb-2" x-text="tier.toUpperCase()"></div>
+              <div class="grid grid-cols-3 gap-2">
+                <div>
+                  <label class="text-xs dark:text-gray-500 text-gray-400">Model</label>
+                  <input type="text" x-model="configForm.models[tier].model"
+                    class="w-full mt-1 px-2 py-1 rounded border text-xs transition-colors
+                           dark:bg-surface-800 dark:border-surface-700 dark:text-white
+                           bg-white border-gray-300 text-gray-900">
+                </div>
+                <div>
+                  <label class="text-xs dark:text-gray-500 text-gray-400">Temperature</label>
+                  <input type="number" step="0.1" min="0" max="2" x-model.number="configForm.models[tier].temperature"
+                    class="w-full mt-1 px-2 py-1 rounded border text-xs transition-colors
+                           dark:bg-surface-800 dark:border-surface-700 dark:text-white
+                           bg-white border-gray-300 text-gray-900">
+                </div>
+                <div>
+                  <label class="text-xs dark:text-gray-500 text-gray-400">Max Tokens</label>
+                  <input type="number" x-model.number="configForm.models[tier].max_output_tokens"
+                    class="w-full mt-1 px-2 py-1 rounded border text-xs transition-colors
+                           dark:bg-surface-800 dark:border-surface-700 dark:text-white
+                           bg-white border-gray-300 text-gray-900">
+                </div>
+              </div>
+            </div>
+          </template>
+        </section>
+
+        <!-- Logging -->
+        <section class="mb-6">
+          <h3 class="text-sm font-semibold text-orange-500 dark:text-orange-300 mb-3">Logging</h3>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs dark:text-gray-500 text-gray-400">Level</label>
+              <select x-model="configForm.logging.level"
+                class="w-full mt-1 px-2 py-1.5 rounded border text-sm transition-colors
+                       dark:bg-surface-900 dark:border-surface-700 dark:text-white
+                       bg-gray-50 border-gray-300 text-gray-900">
+                <option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs dark:text-gray-500 text-gray-400">Format</label>
+              <select x-model="configForm.logging.format"
+                class="w-full mt-1 px-2 py-1.5 rounded border text-sm transition-colors
+                       dark:bg-surface-900 dark:border-surface-700 dark:text-white
+                       bg-gray-50 border-gray-300 text-gray-900">
+                <option value="json">JSON (OTEL)</option><option value="text">Text</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <!-- Actions -->
+        <div class="flex justify-end gap-3 pt-4 border-t dark:border-surface-700 border-gray-200">
+          <button @click="showConfig = false"
+            class="px-4 py-2 rounded-lg text-sm transition
+                   dark:bg-surface-700 dark:text-gray-400 dark:hover:text-white
+                   bg-gray-100 text-gray-500 hover:text-gray-900">Cancel</button>
+          <button @click="saveConfig"
+            class="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-dark transition">
+            Apply Changes</button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- Alpine.js App -->
+  <script>
+    function flyagent() {
+      return {
+        // API
+        apiUrl: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+          ? `http://localhost:8000` : window.location.origin,
+
+        // State
+        query: '',
+        isRunning: false,
+        researchId: null,
+        eventSource: null,
+
+        // Orchestrator
+        orchestrator: null,
+
+        // SubAgents
+        subagents: [],
+
+        // Logs
+        logs: [],
+        showLogs: true,
+        logFilter: 'ALL',
+
+        // Report
+        report: null,
+        confidence: null,
+        renderedReport: '',
+
+        // Stats
+        stats: { elapsed: 0, subagentsSpawned: 0, totalAttempts: 0 },
+
+        // Config
+        showConfig: false,
+        configForm: {
+          orchestrator: { model_tier: 'balanced', max_attempts: 12, max_concurrent_subagents: 3 },
+          subagent: { max_steps: 20, timeout_seconds: 300 },
+          models: {
+            fast: { model: 'gemini-2.0-flash', temperature: 0.2, max_output_tokens: 4096 },
+            balanced: { model: 'gemini-2.5-flash', temperature: 0.4, max_output_tokens: 8192 },
+            powerful: { model: 'gemini-2.5-pro', temperature: 0.6, max_output_tokens: 16384 },
+          },
+          logging: { level: 'INFO', format: 'json' },
+        },
+
+        // -- Status helpers --
+        agentStatusClass(status, type) {
+          const isFinished = status === 'reported_back' || status === 'done';
+          const isRunning = status === 'running';
+          const isExhausted = status === 'exhausted';
+          const isError = status === 'error' || status === 'timeout';
+
+          if (type === 'icon') {
+            if (isFinished) return 'bg-green-500/20 text-green-600 dark:text-green-400';
+            if (isRunning) return 'bg-blue-500/20 text-blue-600 dark:text-blue-400';
+            if (isExhausted) return 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400';
+            return 'bg-red-500/20 text-red-600 dark:text-red-400';
+          }
+          // badge
+          if (isFinished) return 'bg-green-500/20 text-green-600 dark:text-green-400';
+          if (isRunning) return 'bg-blue-500/20 text-blue-600 dark:text-blue-400';
+          if (isExhausted) return 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400';
+          return 'bg-red-500/20 text-red-600 dark:text-red-400';
+        },
+
+        agentStatusLabel(status) {
+          if (status === 'reported_back') return 'reported_back';
+          if (status === 'done') return 'done';
+          if (status === 'exhausted') return 'exhausted steps';
+          return status;
+        },
+
+        get filteredLogs() {
+          if (this.logFilter === 'ALL') return this.logs;
+          return this.logs.filter(l => l.level === this.logFilter || l.level === this.logFilter + 'ING');
+        },
+
+        init() {
+          this.loadConfig();
+        },
+
+        async loadConfig() {
+          try {
+            const res = await fetch(`${this.apiUrl}/api/config`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.orchestrator) this.configForm.orchestrator = { ...this.configForm.orchestrator, ...data.orchestrator };
+              if (data.subagent) this.configForm.subagent = { ...this.configForm.subagent, ...data.subagent };
+              if (data.models) {
+                for (const [tier, m] of Object.entries(data.models)) {
+                  if (this.configForm.models[tier]) this.configForm.models[tier] = { ...this.configForm.models[tier], ...m };
+                }
+              }
+              if (data.logging) this.configForm.logging = { ...this.configForm.logging, ...data.logging };
+            }
+          } catch (e) { /* API not ready yet */ }
+        },
+
+        async saveConfig() {
+          try {
+            const res = await fetch(`${this.apiUrl}/api/config`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                orchestrator: this.configForm.orchestrator,
+                subagent: this.configForm.subagent,
+                models: this.configForm.models,
+                logging_config: this.configForm.logging,
+              }),
+            });
+            if (res.ok) {
+              this.showConfig = false;
+              this.addLog('INFO', 'Config updated successfully');
+            }
+          } catch (e) {
+            this.addLog('ERROR', `Config update failed: ${e.message}`);
+          }
+        },
+
+        async startResearch() {
+          if (!this.query.trim() || this.isRunning) return;
+
+          // Reset state
+          this.isRunning = true;
+          this.orchestrator = null;
+          this.subagents = [];
+          this.report = null;
+          this.renderedReport = '';
+          this.confidence = null;
+          this.logs = [];
+          this.stats = { elapsed: 0, subagentsSpawned: 0, totalAttempts: 0 };
+
+          this.addLog('INFO', `Starting research: "${this.query}"`);
+
+          try {
+            const res = await fetch(`${this.apiUrl}/api/research`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ query: this.query }),
+            });
+
+            if (!res.ok) throw new Error(`API error: ${res.status}`);
+
+            const data = await res.json();
+            this.researchId = data.research_id;
+            this.addLog('INFO', `Research ID: ${this.researchId}`);
+            this.connectSSE();
+          } catch (e) {
+            this.addLog('ERROR', `Failed to start: ${e.message}`);
+            this.isRunning = false;
+          }
+        },
+
+        connectSSE() {
+          if (this.eventSource) this.eventSource.close();
+
+          const es = new EventSource(`${this.apiUrl}/api/research/${this.researchId}/events`);
+          this.eventSource = es;
+
+          es.addEventListener('orchestrator_started', (e) => {
+            const d = JSON.parse(e.data);
+            this.orchestrator = {
+              model: d.model, modelTier: d.model_tier,
+              attempt: 0, maxAttempts: d.max_attempts,
+              tools: d.tools, status: 'running',
+            };
+          });
+
+          es.addEventListener('orchestrator_attempt', (e) => {
+            const d = JSON.parse(e.data);
+            if (this.orchestrator) {
+              this.orchestrator.attempt = d.attempt;
+            }
+          });
+
+          es.addEventListener('subagent_created', (e) => {
+            const d = JSON.parse(e.data);
+            this.subagents.push({
+              id: d.id, instruction: d.instruction, tools: d.tools || [],
+              modelTier: d.model_tier, status: 'running',
+              step: 0, maxSteps: d.max_steps || 20,
+              elapsed: 0, summary: '', lastAction: null,
+            });
+            this.addLog('INFO', `SubAgent #${d.id} created [${d.model_tier}] tools=${(d.tools||[]).join(',')}`);
+          });
+
+          es.addEventListener('subagent_step', (e) => {
+            const d = JSON.parse(e.data);
+            const idx = this.subagents.findIndex(a => a.id === d.id);
+            if (idx !== -1) {
+              // Replace the object to guarantee Alpine reactivity
+              this.subagents[idx] = {
+                ...this.subagents[idx],
+                step: d.step,
+                lastAction: d.action,
+              };
+            }
+            this.addLog('INFO', `SubAgent #${d.id} step ${d.step}: ${d.action}`);
+          });
+
+          es.addEventListener('subagent_finished', (e) => {
+            const d = JSON.parse(e.data);
+            const idx = this.subagents.findIndex(a => a.id === d.id);
+            if (idx !== -1) {
+              this.subagents[idx] = {
+                ...this.subagents[idx],
+                status: d.exhausted_steps ? 'exhausted' : d.status,
+                summary: d.summary,
+                step: d.steps_taken,
+                elapsed: d.elapsed || 0,
+                lastAction: null,
+              };
+            }
+            this.addLog('INFO', `SubAgent #${d.id} finished: ${d.status} (${d.steps_taken} steps)`);
+          });
+
+          es.addEventListener('report_submitted', (e) => {
+            const d = JSON.parse(e.data);
+            this.report = d.report;
+            this.confidence = d.confidence;
+            this.renderedReport = marked.parse(d.report || '');
+            if (this.orchestrator) this.orchestrator.status = 'done';
+            this.addLog('INFO', `Report submitted (confidence: ${d.confidence})`);
+          });
+
+          es.addEventListener('research_complete', (e) => {
+            const d = JSON.parse(e.data);
+            this.stats = {
+              elapsed: d.elapsed || 0,
+              subagentsSpawned: d.subagents_spawned || this.subagents.length,
+              totalAttempts: d.total_attempts || 0,
+            };
+            this.isRunning = false;
+            if (this.orchestrator) this.orchestrator.status = 'done';
+            this.addLog('INFO', `Research complete (${(d.elapsed || 0).toFixed(1)}s)`);
+          });
+
+          es.addEventListener('log', (e) => {
+            const d = JSON.parse(e.data);
+            this.addLog(d.level || 'INFO', d.message || '');
+          });
+
+          es.addEventListener('error_event', (e) => {
+            const d = JSON.parse(e.data);
+            this.addLog('ERROR', d.message || 'Unknown error');
+          });
+
+          es.addEventListener('done', () => {
+            es.close();
+            this.isRunning = false;
+          });
+
+          es.onerror = () => {
+            if (this.isRunning) {
+              this.addLog('WARN', 'SSE connection lost, research may still be running...');
+            }
+            es.close();
+            this.isRunning = false;
+          };
+        },
+
+        addLog(level, message) {
+          const now = new Date();
+          const time = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
+          this.logs.push({ time, level, message });
+          // Auto-scroll
+          this.$nextTick(() => {
+            const panel = this.$refs.logPanel;
+            if (panel) panel.scrollTop = panel.scrollHeight;
+          });
+        },
+      };
+    }
+  </script>
+</body>
+</html>
