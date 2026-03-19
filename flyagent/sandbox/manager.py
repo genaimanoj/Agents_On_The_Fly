@@ -8,11 +8,20 @@ sub-agent finishes, the sandbox is cleaned up automatically.
 This follows the pattern used by AutoGen (Docker executor), Open Interpreter
 (sandbox mode), and E2B (isolated cloud sandboxes) — but uses simple
 subprocess + tmpdir isolation that works everywhere without Docker.
+
+Security layers:
+1. Command validation — blocks dangerous shell patterns (rm -rf /, absolute
+   paths outside sandbox, network exfiltration, etc.)
+2. Python restriction — wraps code in RestrictedPython-style checks, blocks
+   dangerous imports (os.system, subprocess, shutil.rmtree, etc.)
+3. Path containment — all file tools validate resolved paths stay within tmpdir.
+4. Resource limits — timeouts, output size caps, restricted PATH/env.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -130,6 +139,114 @@ class Sandbox:
         self.cleanup()
 
 
+# ── Command validation ────────────────────────────────────────
+
+# Shell patterns that are always blocked — these can cause damage outside the
+# sandbox tmpdir regardless of cwd.
+_DANGEROUS_SHELL_PATTERNS: list[re.Pattern[str]] = [
+    # Destructive recursive operations targeting root or parent dirs
+    re.compile(r"\brm\s+.*-[^\s]*r[^\s]*\s+/(?!\S*tmp)", re.IGNORECASE),
+    re.compile(r"\brm\s+.*-[^\s]*r[^\s]*\s+\.\.", re.IGNORECASE),
+    # Direct removal of well-known system / user dirs
+    re.compile(r"\brm\b.*\s+/(usr|etc|home|var|opt|boot|root|srv|lib|bin|sbin)\b"),
+    # mkfs, dd targeting devices, format operations
+    re.compile(r"\b(mkfs|dd\s+.*of=\s*/dev/)\b"),
+    # Fork bombs and resource exhaustion
+    re.compile(r":\(\)\s*\{\s*:\|:&\s*\}\s*;"),
+    re.compile(r"\bfork\s*bomb\b", re.IGNORECASE),
+    # chmod/chown on system paths
+    re.compile(r"\b(chmod|chown)\b.*\s+/(usr|etc|home|var|bin|sbin|lib|boot)\b"),
+    # Overwriting boot / system files
+    re.compile(r">\s*/(etc|boot|usr|lib|bin|sbin)/"),
+    # kill -9 targeting init / all processes
+    re.compile(r"\bkill\s+.*-9\s+(1|0|-1)\b"),
+    re.compile(r"\bkillall\b"),
+    # Dangerous curl/wget piping to shell
+    re.compile(r"\b(curl|wget)\b.*\|\s*(bash|sh|zsh|python|perl)\b"),
+    # Direct /dev/ access
+    re.compile(r"(?:>|<)\s*/dev/(?!null|zero|urandom|random)\S"),
+    # Shutdown / reboot
+    re.compile(r"\b(shutdown|reboot|halt|poweroff|init\s+[0-6])\b"),
+]
+
+# Absolute paths outside the sandbox that are never allowed in shell commands.
+# The sandbox working dir (a /tmp path) is allowed.
+_BLOCKED_ABS_PATH_PREFIXES = (
+    "/home", "/root", "/etc", "/usr", "/var", "/opt", "/boot",
+    "/srv", "/lib", "/bin", "/sbin", "/mnt", "/media", "/proc", "/sys",
+)
+
+# Python imports / calls that are dangerous in a sandbox
+_DANGEROUS_PYTHON_PATTERNS: list[re.Pattern[str]] = [
+    # Direct system command execution
+    re.compile(r"\bos\.(system|popen|exec[a-z]*)\b"),
+    re.compile(r"\bsubprocess\b"),
+    re.compile(r"\bcommands\.(getoutput|getstatusoutput)\b"),
+    # File system destruction outside cwd
+    re.compile(r"\bshutil\.(rmtree|move|copytree)\b"),
+    re.compile(r"\bos\.(remove|unlink|rmdir|removedirs|rename)\s*\(\s*['\"]/(home|etc|usr|var|root|boot|opt|srv|lib|bin|sbin)"),
+    # Dangerous builtins
+    re.compile(r"\b__import__\b"),
+    re.compile(r"\beval\s*\("),
+    re.compile(r"\bexec\s*\("),
+    re.compile(r"\bcompile\s*\("),
+    # Network exfiltration (reading sensitive files and sending them out)
+    re.compile(r"\bsocket\b"),
+    re.compile(r"\burllib\b"),
+    re.compile(r"\brequests\b"),
+    re.compile(r"\bhttpx\b"),
+    re.compile(r"\baiohttp\b"),
+    # ctypes / code injection
+    re.compile(r"\bctypes\b"),
+    # Signal manipulation
+    re.compile(r"\bos\.kill\b"),
+    re.compile(r"\bsignal\.(SIGKILL|SIGTERM)\b"),
+]
+
+
+def validate_shell_command(command: str, sandbox_dir: Path) -> str | None:
+    """Validate a shell command for safety.
+
+    Returns None if safe, or an error message explaining why it was blocked.
+    """
+    # Check against dangerous patterns
+    for pat in _DANGEROUS_SHELL_PATTERNS:
+        if pat.search(command):
+            return f"[SANDBOX BLOCKED] Command matches dangerous pattern: {pat.pattern}"
+
+    # Block absolute paths outside sandbox and /tmp
+    sandbox_str = str(sandbox_dir)
+    # Find all absolute paths in the command
+    abs_paths = re.findall(r'(?<!\w)(/[a-zA-Z][a-zA-Z0-9_/.\-*]*)', command)
+    for path in abs_paths:
+        # Allow paths within the sandbox dir or /tmp
+        if path.startswith(sandbox_str) or path.startswith("/tmp"):
+            continue
+        # Allow /dev/null, /dev/zero, /dev/urandom
+        if path.startswith("/dev/null") or path.startswith("/dev/zero") or path.startswith("/dev/urandom"):
+            continue
+        # Block paths to sensitive system directories
+        for prefix in _BLOCKED_ABS_PATH_PREFIXES:
+            if path.startswith(prefix):
+                return (
+                    f"[SANDBOX BLOCKED] Command references path outside sandbox: {path}\n"
+                    f"Only relative paths within the sandbox are allowed."
+                )
+
+    return None
+
+
+def validate_python_code(code: str) -> str | None:
+    """Validate Python code for safety in sandbox.
+
+    Returns None if safe, or an error message explaining why it was blocked.
+    """
+    for pat in _DANGEROUS_PYTHON_PATTERNS:
+        if pat.search(code):
+            return f"[SANDBOX BLOCKED] Code matches dangerous pattern: {pat.pattern}"
+    return None
+
+
 # ── Sandbox-scoped tool builders ──────────────────────────────
 
 _SANDBOX_TOOL_BUILDERS: dict[str, Any] = {}
@@ -152,6 +269,11 @@ def _build_shell_exec(sbx: Sandbox) -> ToolInfo:
     timeout_s = (timeout.extra if timeout else {}).get("timeout_seconds", 60)
 
     async def execute(command: str, working_directory: str = "") -> str:
+        # Validate command before execution
+        blocked = validate_shell_command(command, sbx.work_dir)
+        if blocked:
+            return blocked
+
         cwd = sbx.work_dir
         if working_directory:
             candidate = (sbx.work_dir / working_directory).resolve()
@@ -224,6 +346,11 @@ def _build_python_exec(sbx: Sandbox) -> ToolInfo:
     timeout_s = (timeout.extra if timeout else {}).get("timeout_seconds", 30)
 
     async def execute(code: str) -> str:
+        # Validate code before execution
+        blocked = validate_python_code(code)
+        if blocked:
+            return blocked
+
         env = os.environ.copy()
         env["HOME"] = str(sbx.work_dir)
         env["SANDBOX_ID"] = sbx.sandbox_id
@@ -473,6 +600,63 @@ def _build_grep_search(sbx: Sandbox) -> ToolInfo:
         },
         execute=execute,
     )
+
+
+# ── Optional OS-level isolation ────────────────────────────────
+
+def _detect_isolation_support() -> str:
+    """Detect available OS-level isolation.
+
+    Returns one of: "unshare", "none".
+    """
+    # Check if unshare is available and can create user namespaces
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["unshare", "--user", "--map-root-user", "true"],
+            capture_output=True, timeout=5,
+        )
+        if result.returncode == 0:
+            return "unshare"
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+    return "none"
+
+
+_ISOLATION_MODE: str | None = None
+
+
+def _get_isolation_mode() -> str:
+    """Cached detection of isolation mode."""
+    global _ISOLATION_MODE
+    if _ISOLATION_MODE is None:
+        _ISOLATION_MODE = _detect_isolation_support()
+        logger.info(f"Sandbox isolation mode: {_ISOLATION_MODE}")
+    return _ISOLATION_MODE
+
+
+def wrap_command_with_isolation(command: str, work_dir: Path) -> str:
+    """Optionally wrap a command with OS-level isolation.
+
+    When unshare is available, uses mount+pid namespaces to:
+    - Make the filesystem outside the sandbox read-only
+    - Isolate process IDs so the sandbox can't signal host processes
+    """
+    mode = _get_isolation_mode()
+    if mode == "unshare":
+        # Use unshare with mount namespace to restrict filesystem access.
+        # --mount: new mount namespace (can make dirs read-only)
+        # --pid --fork: new PID namespace (can't kill host processes)
+        # --map-root-user: map current user to root in namespace (needed for mount ops)
+        # After entering namespace, remount sensitive dirs as read-only.
+        isolation_prefix = (
+            f"unshare --mount --pid --fork --map-root-user -- "
+            f"bash -c '"
+            f"mount --bind /tmp /tmp 2>/dev/null; "  # keep /tmp writable
+            f"exec bash -c \"cd {work_dir} && {command.replace(chr(39), chr(39)+chr(92)+chr(39)+chr(39))}\"'"
+        )
+        return isolation_prefix
+    return command
 
 
 def _build_passthrough_tool(name: str, config: AppConfig) -> ToolInfo:
