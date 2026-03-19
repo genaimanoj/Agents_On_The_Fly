@@ -51,12 +51,22 @@ class OutputConfig(BaseModel):
     verbose: bool = True
 
 
+class SandboxConfig(BaseModel):
+    level: str = "standard"            # "strict" | "standard" | "permissive"
+    allow_network: bool = True
+    allow_shell: bool = True
+    allow_file_write: bool = True
+    allow_package_install: bool = True
+    working_dir: str = "./workspace"
+
+
 class OrchestratorConfig(BaseModel):
     model_tier: str = "balanced"
     max_attempts: int = 12
     max_concurrent_subagents: int = 3
-    min_subtasks: int = 3              # Minimum subtasks before submit_report is allowed
-    research_depth: str = "thorough"   # "quick" | "moderate" | "thorough"
+    min_subtasks: int = 1              # Minimum subtasks before submit_report is allowed
+    task_mode: str = "general"         # "research" | "coding" | "automation" | "general"
+    task_depth: str = "thorough"       # "quick" | "moderate" | "thorough"
 
 
 class ServerConfig(BaseModel):
@@ -76,9 +86,10 @@ class LoggingConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
-    project_name: str = "deep-research-agent"
+    project_name: str = "flyagent-sandbox"
     workspace_dir: Path = Field(default_factory=lambda: _resolve("./workspace"))
     orchestrator: OrchestratorConfig = Field(default_factory=OrchestratorConfig)
+    sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     models: dict[str, ModelConfig] = Field(default_factory=dict)
     tools: dict[str, ToolConfig] = Field(default_factory=dict)
     subagent: SubagentConfig = Field(default_factory=SubagentConfig)
@@ -95,6 +106,7 @@ class AppConfig(BaseModel):
         """Return a JSON-friendly dict for the config UI panel."""
         return {
             "orchestrator": self.orchestrator.model_dump(),
+            "sandbox": self.sandbox.model_dump(),
             "models": {k: v.model_dump() for k, v in self.models.items()},
             "subagent": self.subagent.model_dump(),
             "tools": {k: {"enabled": v.enabled, **v.extra} for k, v in self.tools.items()},
@@ -157,13 +169,17 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
     # Logging
     log_raw = raw.get("logging", {})
 
+    # Sandbox
+    sandbox_raw = raw.get("sandbox", {})
+
     # Project
     proj = raw.get("project", {})
 
     return AppConfig(
-        project_name=proj.get("name", "deep-research-agent"),
+        project_name=proj.get("name", "flyagent-sandbox"),
         workspace_dir=_resolve(proj.get("workspace_dir", "./workspace")),
         orchestrator=OrchestratorConfig(**orch_raw),
+        sandbox=SandboxConfig(**sandbox_raw),
         models=models,
         tools=tools,
         subagent=SubagentConfig(**sub_raw),

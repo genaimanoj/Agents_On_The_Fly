@@ -1,9 +1,10 @@
-"""FastAPI application — serves the FlyAgent research API.
+"""FastAPI application — serves the FlyAgent Sandbox API.
 
 Endpoints:
-  POST /api/research              Start a research query (returns research_id)
-  GET  /api/research/{id}/events  SSE stream of real-time events
-  GET  /api/research/{id}         Get final result
+  POST /api/task                  Start a task (returns task_id)
+  POST /api/research              Start a research task (legacy, returns research_id)
+  GET  /api/task/{id}/events      SSE stream of real-time events
+  GET  /api/task/{id}             Get final result
   GET  /api/config                Get current config
   PUT  /api/config                Update config (runtime, in-memory)
   GET  /api/health                Health check
@@ -63,17 +64,25 @@ app.add_middleware(
 
 
 # ── Request / Response models ───────────────────────────────────
-class ResearchRequest(BaseModel):
+class TaskRequest(BaseModel):
     query: str
+    task_mode: str | None = None   # "research" | "coding" | "automation" | "general"
 
 
-class ResearchResponse(BaseModel):
-    research_id: str
+class TaskResponse(BaseModel):
+    task_id: str
     status: str
+    task_mode: str
+
+
+# Legacy aliases
+ResearchRequest = TaskRequest
+ResearchResponse = TaskResponse
 
 
 class ConfigUpdate(BaseModel):
     orchestrator: dict[str, Any] | None = None
+    sandbox: dict[str, Any] | None = None
     subagent: dict[str, Any] | None = None
     models: dict[str, dict[str, Any]] | None = None
     output: dict[str, Any] | None = None
@@ -81,14 +90,20 @@ class ConfigUpdate(BaseModel):
 
 
 # ── Background runner ───────────────────────────────────────────
-async def _run_research(research_id: str, query: str) -> None:
+async def _run_task(task_id: str, query: str, task_mode: str | None = None) -> None:
     """Run orchestrator in background, store result, emit completion."""
-    research_store[research_id]["status"] = "running"
+    research_store[task_id]["status"] = "running"
     try:
-        orch = Orchestrator(config, event_bus=event_bus)
-        result = await orch.run(query, research_id=research_id)
-        research_store[research_id]["status"] = "complete"
-        research_store[research_id]["result"] = {
+        task_config = config
+        # Override task_mode if specified per-request
+        if task_mode and task_mode != config.orchestrator.task_mode:
+            task_config = config.model_copy(deep=True)
+            task_config.orchestrator.task_mode = task_mode
+
+        orch = Orchestrator(task_config, event_bus=event_bus)
+        result = await orch.run(query, research_id=task_id)
+        research_store[task_id]["status"] = "complete"
+        research_store[task_id]["result"] = {
             "report": result.report,
             "confidence": result.confidence,
             "total_attempts": result.total_attempts,
@@ -96,11 +111,11 @@ async def _run_research(research_id: str, query: str) -> None:
             "subagents_spawned": len(result.task_entries),
         }
     except Exception as e:
-        logger.error(f"Research {research_id} failed: {e}", extra={"research_id": research_id})
-        research_store[research_id]["status"] = "error"
-        research_store[research_id]["error"] = str(e)
-        await event_bus.emit(research_id, "error", {"message": str(e)})
-        await event_bus.emit(research_id, "research_complete", {"error": str(e)})
+        logger.error(f"Task {task_id} failed: {e}", extra={"research_id": task_id})
+        research_store[task_id]["status"] = "error"
+        research_store[task_id]["error"] = str(e)
+        await event_bus.emit(task_id, "error", {"message": str(e)})
+        await event_bus.emit(task_id, "research_complete", {"error": str(e)})
 
 
 # ── Routes ──────────────────────────────────────────────────────
@@ -109,23 +124,34 @@ async def health():
     return {"status": "ok", "project": config.project_name}
 
 
-@app.post("/api/research", response_model=ResearchResponse)
-async def start_research(req: ResearchRequest):
-    research_id = uuid.uuid4().hex[:12]
-    research_store[research_id] = {"status": "queued", "query": req.query}
-    logger.info(f"Research queued: {research_id}", extra={"research_id": research_id})
-    asyncio.create_task(_run_research(research_id, req.query))
-    return ResearchResponse(research_id=research_id, status="queued")
+@app.post("/api/task", response_model=TaskResponse)
+async def start_task(req: TaskRequest):
+    """Start a general task — supports all task modes."""
+    task_id = uuid.uuid4().hex[:12]
+    mode = req.task_mode or config.orchestrator.task_mode
+    research_store[task_id] = {"status": "queued", "query": req.query, "task_mode": mode}
+    logger.info(f"Task queued: {task_id} (mode={mode})", extra={"research_id": task_id})
+    asyncio.create_task(_run_task(task_id, req.query, req.task_mode))
+    return TaskResponse(task_id=task_id, status="queued", task_mode=mode)
 
 
-@app.get("/api/research/{research_id}")
-async def get_research(research_id: str):
-    entry = research_store.get(research_id)
+@app.post("/api/research", response_model=TaskResponse)
+async def start_research(req: TaskRequest):
+    """Legacy research endpoint — redirects to task with research mode."""
+    req.task_mode = req.task_mode or "research"
+    return await start_task(req)
+
+
+@app.get("/api/task/{task_id}")
+@app.get("/api/research/{task_id}")
+async def get_task(task_id: str):
+    entry = research_store.get(task_id)
     if not entry:
-        raise HTTPException(status_code=404, detail="Research not found")
+        raise HTTPException(status_code=404, detail="Task not found")
     return entry
 
 
+@app.get("/api/task/{research_id}/events")
 @app.get("/api/research/{research_id}/events")
 async def stream_events(research_id: str):
     """Server-Sent Events stream for real-time updates."""
@@ -169,6 +195,11 @@ async def update_config(update: ConfigUpdate):
         for k, v in update.orchestrator.items():
             if hasattr(config.orchestrator, k):
                 setattr(config.orchestrator, k, v)
+
+    if update.sandbox:
+        for k, v in update.sandbox.items():
+            if hasattr(config.sandbox, k):
+                setattr(config.sandbox, k, v)
 
     if update.subagent:
         for k, v in update.subagent.items():

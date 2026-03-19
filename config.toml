@@ -1,13 +1,15 @@
 # ============================================================
-# FlyAgent Configuration — ICTM-based Deep Research Agent
+# FlyAgent Configuration — ICTM-based Agent Sandbox
 # ============================================================
 # Every SubAgent is dynamically created with a 4-tuple:
 #   φ = ⟨Instruction, Context, Tools, Model⟩
 # The orchestrator synthesizes these tuples on-the-fly.
+#
+# Task Modes: "research" | "coding" | "automation" | "general"
 # ============================================================
 
 [project]
-name = "deep-research-agent"
+name = "flyagent-sandbox"
 workspace_dir = "./workspace"
 
 # ============================================================
@@ -17,8 +19,20 @@ workspace_dir = "./workspace"
 model_tier = "balanced"          # Which model tier the orchestrator uses
 max_attempts = 12                # Max orchestration loops
 max_concurrent_subagents = 3     # Parallel subagent execution
-min_subtasks = 3                 # Minimum subtasks before allowing final report
-research_depth = "thorough"      # "quick" (1-2) | "moderate" (3-4) | "thorough" (5-8)
+min_subtasks = 1                 # Minimum subtasks before allowing final report
+task_mode = "general"            # "research" | "coding" | "automation" | "general"
+task_depth = "thorough"          # "quick" (1-2) | "moderate" (3-4) | "thorough" (5-8)
+
+# ============================================================
+# Sandbox Settings — controls agent permissions in workspace
+# ============================================================
+[sandbox]
+level = "standard"               # "strict" | "standard" | "permissive"
+allow_network = true             # Allow outbound network access
+allow_shell = true               # Allow shell command execution
+allow_file_write = true          # Allow writing files
+allow_package_install = true     # Allow pip/npm install
+working_dir = "./workspace"      # Root directory for all agent operations
 
 # ============================================================
 # Model Tiers — mapped to concrete Google Gemini models
@@ -45,6 +59,41 @@ max_output_tokens = 16384
 # ============================================================
 # Tool Configuration — each tool can be toggled and tuned
 # ============================================================
+
+# --- Sandbox / Execution Tools ---
+[tools.shell_exec]
+enabled = true
+timeout_seconds = 60
+working_dir = "./workspace"
+
+[tools.file_edit]
+enabled = true
+workspace_dir = "./workspace"
+
+[tools.file_list]
+enabled = true
+workspace_dir = "./workspace"
+max_depth = 4
+
+[tools.grep_search]
+enabled = true
+workspace_dir = "./workspace"
+max_results = 50
+
+[tools.python_exec]
+enabled = true
+timeout_seconds = 30
+
+[tools.file_read]
+enabled = true
+allowed_dirs = ["./workspace"]
+max_file_size_kb = 512
+
+[tools.file_write]
+enabled = true
+output_dir = "./workspace"
+
+# --- Research / Web Tools ---
 [tools.web_search]
 enabled = true
 max_results = 8
@@ -54,7 +103,7 @@ region = "wt-wt"                 # DuckDuckGo region (wt-wt = no region)
 enabled = true
 max_content_length = 15000       # Truncate fetched pages to this many chars
 timeout_seconds = 30
-user_agent = "FlyAgent/0.1 Research Bot"
+user_agent = "FlyAgent/0.1 Agent"
 
 [tools.arxiv_search]
 enabled = true
@@ -70,19 +119,6 @@ enabled = true
 max_results = 8
 timelimit = "m"                  # d=day, w=week, m=month
 
-[tools.file_read]
-enabled = true
-allowed_dirs = ["./workspace"]
-max_file_size_kb = 512
-
-[tools.file_write]
-enabled = true
-output_dir = "./workspace"
-
-[tools.python_exec]
-enabled = true
-timeout_seconds = 30
-
 [tools.get_datetime]
 enabled = true
 
@@ -90,7 +126,7 @@ enabled = true
 # SubAgent Defaults
 # ============================================================
 [subagent]
-max_steps = 20                   # Max tool calls per subagent run
+max_steps = 25                   # Max tool calls per subagent run
 timeout_seconds = 300            # Hard timeout per subagent
 
 # ============================================================
