@@ -100,7 +100,12 @@ async def run_subagent(
     research_id: str = "",
     subagent_id: int = 0,
 ) -> SubAgentResult:
-    """Execute a SubAgent with the given ICTM tuple."""
+    """Execute a SubAgent with the given ICTM tuple.
+
+    When ``ictm.sandboxed`` is True, all filesystem/execution tools are
+    redirected to an isolated temporary directory.  The sandbox is
+    cleaned up automatically when the sub-agent finishes.
+    """
 
     async def _emit(event_type: str, data: dict) -> None:
         if event_bus:
@@ -110,8 +115,22 @@ async def run_subagent(
     max_steps = config.subagent.max_steps
     model_cfg = config.get_model(ictm.model_tier)
 
-    tool_descriptions = tool_registry.describe_subset(ictm.tools)
-    tools = {t.name: t for t in tool_registry.subset(ictm.tools)}
+    # ── Sandbox isolation ──
+    sandbox = None
+    if ictm.sandboxed:
+        from flyagent.sandbox import SandboxManager
+        mgr = SandboxManager(config)
+        sandbox = mgr.create(sandbox_id=f"sub{subagent_id}")
+        tools = sandbox.build_tools(ictm.tools)
+        tool_descriptions = "\n\n".join(t.schema_text() for t in tools.values())
+        logger.info(
+            f"SubAgent #{subagent_id} running SANDBOXED at {sandbox.work_dir}",
+            extra={"research_id": research_id, "agent_id": f"sub_{subagent_id}"},
+        )
+        await _emit("log", {"level": "INFO", "message": f"SubAgent #{subagent_id} running in SANDBOX"})
+    else:
+        tool_descriptions = tool_registry.describe_subset(ictm.tools)
+        tools = {t.name: t for t in tool_registry.subset(ictm.tools)}
 
     sys_prompt = build_system_prompt(
         task_instruction=ictm.instruction,
@@ -181,8 +200,20 @@ async def run_subagent(
         # ── Report back to Orchestrator ──
         if action_name == "report_back":
             trace.append(trace_entry)
+            # Collect sandbox outputs before cleanup
+            sandbox_files = ""
+            if sandbox:
+                outputs = sandbox.collect_outputs()
+                if outputs:
+                    sandbox_files = "\n\n--- Sandbox Files ---\n"
+                    for fpath, content in outputs.items():
+                        sandbox_files += f"\n### {fpath}\n```\n{content[:2000]}\n```\n"
+                sandbox.cleanup()
+            findings = params.get("findings", "")
+            if sandbox_files:
+                findings += sandbox_files
             return SubAgentResult(
-                findings=params.get("findings", ""),
+                findings=findings,
                 sources=params.get("sources", ""),
                 steps_taken=step,
                 memory=memory_entries,
@@ -214,6 +245,8 @@ async def run_subagent(
         trace.append(trace_entry)
 
     # SubAgent exhausted its step budget — return whatever was gathered
+    if sandbox:
+        sandbox.cleanup()
     return SubAgentResult(
         findings="\n".join(memory_entries),
         sources="Exhausted step budget before explicit report_back.",

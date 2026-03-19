@@ -310,17 +310,20 @@ class Orchestrator:
             # ── delegate_task ──
             if action == "delegate_task":
                 subagent_idx = len(task_entries) + 1
+                sandboxed = params.get("sandboxed", False)
                 ictm = ICTM(
                     instruction=params.get("task_instruction", ""),
                     context=params.get("context", ""),
                     tools=params.get("tools", []),
                     model_tier=params.get("model_tier", "balanced"),
+                    sandboxed=sandboxed,
                 )
                 entry = TaskEntry(attempt=attempt, ictm=ictm)
                 task_entries.append(entry)
 
+                sbx_label = " [SANDBOXED]" if sandboxed else ""
                 logger.info(
-                    f"Spawning SubAgent #{subagent_idx}: {ictm.instruction[:80]}",
+                    f"Spawning SubAgent #{subagent_idx}{sbx_label}: {ictm.instruction[:80]}",
                     extra={"research_id": research_id, "agent_type": "orchestrator", "agent_id": f"sub_{subagent_idx}"},
                 )
                 await self._emit(research_id, "subagent_created", {
@@ -329,12 +332,13 @@ class Orchestrator:
                     "context": ictm.context[:200],
                     "tools": ictm.tools,
                     "model_tier": ictm.model_tier,
+                    "sandboxed": sandboxed,
                     "max_steps": self.config.subagent.max_steps,
                 })
 
                 console.print(Panel(
                     f"[bold]{ictm.instruction[:120]}[/bold]\n"
-                    f"[dim]Model: {ictm.model_tier} | Tools: {ictm.tools}[/dim]",
+                    f"[dim]Model: {ictm.model_tier} | Tools: {ictm.tools}{sbx_label}[/dim]",
                     title=f"SubAgent #{subagent_idx}",
                     style="cyan",
                 ))
@@ -422,7 +426,8 @@ class Orchestrator:
                     {
                         "attempt": e.attempt,
                         "ictm": {"instruction": e.ictm.instruction, "context": e.ictm.context[:500],
-                                 "tools": e.ictm.tools, "model_tier": e.ictm.model_tier},
+                                 "tools": e.ictm.tools, "model_tier": e.ictm.model_tier,
+                                 "sandboxed": e.ictm.sandboxed},
                         **({"result": {"findings": e.result.findings[:2000],
                                        "sources": e.result.sources, "steps_taken": e.result.steps_taken,
                                        "elapsed_seconds": e.result.elapsed_seconds,

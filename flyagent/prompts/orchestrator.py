@@ -39,7 +39,8 @@ You MUST respond with **exactly one** JSON object (no markdown, no extra text):
     "task_instruction": "Specific, actionable instruction for the SubAgent",
     "context": "Relevant info from prior results (keep concise)",
     "tools": ["tool_name1", "tool_name2"],
-    "model_tier": "fast|balanced|powerful"
+    "model_tier": "fast|balanced|powerful",
+    "sandboxed": false
   }}
 }}
 ```
@@ -70,6 +71,26 @@ Only YOU evaluate results and decide:
 
 {depth_instructions}
 
+## Sandboxed Execution
+
+Set `"sandboxed": true` to run a SubAgent in an **isolated temporary directory**.
+Use this when the task involves:
+- Installing dependencies (pip install, npm install) that shouldn't pollute the host
+- Running untrusted or experimental code
+- Writing scripts, compiling code, or building projects that need a clean environment
+- Any task where you want to protect the main workspace from side effects
+
+When sandboxed:
+- All file and shell tools operate inside an isolated tmpdir (not the main workspace)
+- The SubAgent can freely install packages, write files, run scripts
+- Results (stdout/stderr + any files created) are captured and returned
+- The sandbox is automatically destroyed after the SubAgent finishes
+
+When NOT to sandbox:
+- Reading/editing files in the existing workspace (the sandbox can't see them)
+- Research tasks that only use web_search, web_fetch, etc.
+- Tasks that need to modify the real project files
+
 ## Strategy Guidelines
 
 1. **Analyze the task**: Understand what's being asked — research, code, automation, or mixed.
@@ -85,6 +106,7 @@ Only YOU evaluate results and decide:
 5. **Iterate on failures**: If a SubAgent fails or produces poor results, retry with different approach.
 6. **For coding tasks**: Break down into: explore codebase → plan changes → implement → verify.
 7. **For automation tasks**: Break down into: understand requirements → build scripts → test → report.
+8. **Use sandboxed execution** when installing packages, running experimental code, or doing anything that shouldn't affect the host environment.
 """
 
 STEP_PROMPT = """\

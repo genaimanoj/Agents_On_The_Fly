@@ -33,6 +33,9 @@ allow_shell = true               # Allow shell command execution
 allow_file_write = true          # Allow writing files
 allow_package_install = true     # Allow pip/npm install
 working_dir = "./workspace"      # Root directory for all agent operations
+enable_isolated = true           # Allow orchestrator to use isolated sandbox execution
+isolated_timeout = 120           # Timeout (seconds) for isolated sandbox sub-agents
+isolated_cleanup = true          # Auto-cleanup sandbox tmpdir after sub-agent finishes
 
 # ============================================================
 # Model Tiers — mapped to concrete Google Gemini models
