@@ -17,6 +17,8 @@ workspace_dir = "./workspace"
 model_tier = "balanced"          # Which model tier the orchestrator uses
 max_attempts = 12                # Max orchestration loops
 max_concurrent_subagents = 3     # Parallel subagent execution
+min_subtasks = 3                 # Minimum subtasks before allowing final report
+research_depth = "thorough"      # "quick" (1-2) | "moderate" (3-4) | "thorough" (5-8)
 
 # ============================================================
 # Model Tiers — mapped to concrete Google Gemini models

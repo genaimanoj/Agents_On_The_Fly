@@ -351,7 +351,7 @@
         <!-- Orchestrator -->
         <section class="mb-6">
           <h3 class="text-sm font-semibold text-purple-500 dark:text-purple-300 mb-3">Orchestrator</h3>
-          <div class="grid grid-cols-3 gap-3">
+          <div class="grid grid-cols-3 gap-3 mb-3">
             <div>
               <label class="text-xs dark:text-gray-500 text-gray-400">Model Tier</label>
               <select x-model="configForm.orchestrator.model_tier"
@@ -376,6 +376,26 @@
                 class="w-full mt-1 px-2 py-1.5 rounded border text-sm transition-colors
                        dark:bg-surface-900 dark:border-surface-700 dark:text-white
                        bg-gray-50 border-gray-300 text-gray-900">
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs dark:text-gray-500 text-gray-400">Min Subtasks</label>
+              <input type="number" min="1" max="12" x-model.number="configForm.orchestrator.min_subtasks"
+                class="w-full mt-1 px-2 py-1.5 rounded border text-sm transition-colors
+                       dark:bg-surface-900 dark:border-surface-700 dark:text-white
+                       bg-gray-50 border-gray-300 text-gray-900">
+            </div>
+            <div>
+              <label class="text-xs dark:text-gray-500 text-gray-400">Research Depth</label>
+              <select x-model="configForm.orchestrator.research_depth"
+                class="w-full mt-1 px-2 py-1.5 rounded border text-sm transition-colors
+                       dark:bg-surface-900 dark:border-surface-700 dark:text-white
+                       bg-gray-50 border-gray-300 text-gray-900">
+                <option value="quick">quick</option>
+                <option value="moderate">moderate</option>
+                <option value="thorough">thorough</option>
+              </select>
             </div>
           </div>
         </section>
@@ -509,7 +529,7 @@
         // Config
         showConfig: false,
         configForm: {
-          orchestrator: { model_tier: 'balanced', max_attempts: 12, max_concurrent_subagents: 3 },
+          orchestrator: { model_tier: 'balanced', max_attempts: 12, max_concurrent_subagents: 3, min_subtasks: 3, research_depth: 'thorough' },
           subagent: { max_steps: 20, timeout_seconds: 300 },
           models: {
             fast: { model: 'gemini-2.0-flash', temperature: 0.2, max_output_tokens: 4096 },

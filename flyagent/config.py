@@ -55,6 +55,8 @@ class OrchestratorConfig(BaseModel):
     model_tier: str = "balanced"
     max_attempts: int = 12
     max_concurrent_subagents: int = 3
+    min_subtasks: int = 3              # Minimum subtasks before submit_report is allowed
+    research_depth: str = "thorough"   # "quick" | "moderate" | "thorough"
 
 
 class ServerConfig(BaseModel):

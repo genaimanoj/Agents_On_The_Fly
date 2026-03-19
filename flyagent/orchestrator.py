@@ -198,8 +198,7 @@ class Orchestrator:
 
         sys_prompt = build_system_prompt(
             tool_descriptions=self.tool_registry.describe_all(),
-            max_attempts=max_attempts,
-            current_attempt=0,
+            research_depth=self.config.orchestrator.research_depth,
         )
         model = create_model(model_cfg, system_instruction=sys_prompt)
         chat = model.start_chat(history=[])
@@ -218,6 +217,11 @@ class Orchestrator:
             step_prompt = build_step_prompt(
                 query=query,
                 subtask_history=_format_subtask_history(task_entries),
+                current_attempt=attempt,
+                max_attempts=max_attempts,
+                subtask_count=len(task_entries),
+                min_subtasks=self.config.orchestrator.min_subtasks,
+                research_depth=self.config.orchestrator.research_depth,
             )
 
             try:
@@ -235,6 +239,37 @@ class Orchestrator:
             if reasoning:
                 logger.info(f"Reasoning: {reasoning[:200]}", extra={"research_id": research_id})
                 await self._emit(research_id, "log", {"level": "INFO", "message": f"Reasoning: {reasoning[:200]}"})
+
+            # ── Enforce min_subtasks: reject early submit ──
+            min_sub = self.config.orchestrator.min_subtasks
+            if action == "submit_report" and len(task_entries) < min_sub:
+                needed = min_sub - len(task_entries)
+                logger.info(
+                    f"Blocked early submit — need {needed} more subtask(s) (min={min_sub})",
+                    extra={"research_id": research_id},
+                )
+                await self._emit(research_id, "log", {
+                    "level": "WARN",
+                    "message": f"Submit blocked: {len(task_entries)}/{min_sub} subtasks completed. Delegating more.",
+                })
+                # Tell the LLM to delegate instead
+                rejection = (
+                    f"SYSTEM: Your submit_report was REJECTED because you have only completed "
+                    f"{len(task_entries)} subtask(s) but the minimum is {min_sub}. "
+                    f"You MUST delegate {needed} more subtask(s) before submitting. "
+                    f"Respond with a delegate_task action."
+                )
+                try:
+                    raw_response = await chat_turn(chat, rejection)
+                    decision = _parse_json(raw_response)
+                    action = decision.get("action", "delegate_task")
+                    reasoning = decision.get("reasoning", "")
+                    params = decision.get("params", {})
+                    if reasoning:
+                        await self._emit(research_id, "log", {"level": "INFO", "message": f"Reasoning: {reasoning[:200]}"})
+                except Exception as e:
+                    logger.error(f"LLM error on rejection retry: {e}", extra={"research_id": research_id})
+                    continue
 
             # ── submit_report ──
             if action == "submit_report":
