@@ -53,6 +53,10 @@ class OutputConfig(BaseModel):
 
 class SandboxConfig(BaseModel):
     level: str = "standard"            # "strict" | "standard" | "permissive"
+    backend: str = "local"             # "local" (tmpdir) | "docker" (container)
+    docker_image: str = "flyagent-sandbox:latest"
+    docker_memory: str = "512m"
+    docker_cpus: float = 1.0
     allow_network: bool = True
     allow_shell: bool = True
     allow_file_write: bool = True

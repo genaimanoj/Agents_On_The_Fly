@@ -28,7 +28,11 @@ task_depth = "thorough"          # "quick" (1-2) | "moderate" (3-4) | "thorough"
 # ============================================================
 [sandbox]
 level = "standard"               # "strict" | "standard" | "permissive"
-allow_network = true             # Allow outbound network access
+backend = "docker"               # "local" (tmpdir + regex) | "docker" (container isolation)
+docker_image = "flyagent-sandbox:latest"   # Pre-built sandbox image
+docker_memory = "512m"           # Memory limit per container
+docker_cpus = 1.0                # CPU limit per container
+allow_network = true             # Allow outbound network access (--network none when false)
 allow_shell = true               # Allow shell command execution
 allow_file_write = true          # Allow writing files
 allow_package_install = true     # Allow pip/npm install

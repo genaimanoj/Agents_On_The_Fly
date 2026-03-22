@@ -20,6 +20,7 @@ Security layers:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import shutil
@@ -49,28 +50,40 @@ class SandboxManager:
         self.config = config
         self._active: dict[str, "Sandbox"] = {}
 
-    def create(self, sandbox_id: str = "") -> "Sandbox":
-        """Create a new isolated sandbox environment."""
-        sandbox = Sandbox(self.config, sandbox_id=sandbox_id)
+    def create(self, sandbox_id: str = ""):
+        """Create a new isolated sandbox environment.
+
+        Returns a ``Sandbox`` (local tmpdir) or ``DockerSandbox`` (container)
+        depending on ``config.sandbox.backend``.
+        """
+        backend = getattr(self.config.sandbox, "backend", "local")
+        if backend == "docker":
+            from flyagent.sandbox.docker_sandbox import DockerSandbox
+            sandbox = DockerSandbox(self.config, sandbox_id=sandbox_id)
+        else:
+            sandbox = Sandbox(self.config, sandbox_id=sandbox_id)
         self._active[sandbox.sandbox_id] = sandbox
         logger.info(
-            f"Sandbox created: {sandbox.sandbox_id} at {sandbox.work_dir}",
+            f"Sandbox created ({backend}): {sandbox.sandbox_id} at {sandbox.work_dir}",
         )
         return sandbox
 
     def get(self, sandbox_id: str) -> "Sandbox | None":
         return self._active.get(sandbox_id)
 
-    def cleanup(self, sandbox_id: str) -> None:
+    async def cleanup(self, sandbox_id: str) -> None:
         """Clean up a specific sandbox."""
         sandbox = self._active.pop(sandbox_id, None)
         if sandbox:
-            sandbox.cleanup()
+            result = sandbox.cleanup()
+            # DockerSandbox.cleanup() is async, Sandbox.cleanup() is sync
+            if asyncio.iscoroutine(result):
+                await result
 
-    def cleanup_all(self) -> None:
+    async def cleanup_all(self) -> None:
         """Clean up all active sandboxes."""
         for sid in list(self._active):
-            self.cleanup(sid)
+            await self.cleanup(sid)
 
 
 class Sandbox:
@@ -85,6 +98,10 @@ class Sandbox:
         self.sandbox_id = sandbox_id or tempfile.mktemp(prefix="sbx_")[-8:]
         self.work_dir = Path(tempfile.mkdtemp(prefix=f"flyagent_sbx_{self.sandbox_id}_"))
         self._alive = True
+
+    async def start(self) -> None:
+        """No-op for local sandbox (interface compatibility with DockerSandbox)."""
+        pass
 
     # ── Tool factories scoped to sandbox dir ──────────────────
 

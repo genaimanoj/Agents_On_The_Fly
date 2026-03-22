@@ -120,7 +120,8 @@ async def run_subagent(
     if ictm.sandboxed:
         from flyagent.sandbox import SandboxManager
         mgr = SandboxManager(config)
-        sandbox = mgr.create(sandbox_id=f"sub{subagent_id}")
+        sandbox = mgr.create(sandbox_id=f"{research_id[:8]}_sub{subagent_id}")
+        await sandbox.start()
         tools = sandbox.build_tools(ictm.tools)
         tool_descriptions = "\n\n".join(t.schema_text() for t in tools.values())
         logger.info(
@@ -208,7 +209,7 @@ async def run_subagent(
                     sandbox_files = "\n\n--- Sandbox Files ---\n"
                     for fpath, content in outputs.items():
                         sandbox_files += f"\n### {fpath}\n```\n{content[:2000]}\n```\n"
-                sandbox.cleanup()
+                await sandbox.cleanup()
             findings = params.get("findings", "")
             if sandbox_files:
                 findings += sandbox_files
@@ -246,7 +247,7 @@ async def run_subagent(
 
     # SubAgent exhausted its step budget — return whatever was gathered
     if sandbox:
-        sandbox.cleanup()
+        await sandbox.cleanup()
     return SubAgentResult(
         findings="\n".join(memory_entries),
         sources="Exhausted step budget before explicit report_back.",
