@@ -261,8 +261,6 @@ GOOGLE_API_KEY=your-google-api-key-here
 # FLYAGENT_VERBOSE=true
 ```
 
-> You can also use `GEMINI_API_KEY` — FlyAgent checks both.
-
 ### Key Config Sections (`config.toml`)
 
 | Section | What it controls |
