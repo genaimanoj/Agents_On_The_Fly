@@ -90,6 +90,7 @@ python run_ui.py                 # UI  at http://localhost:3000
 
 - **Python 3.10+**
 - **Google AI API key** — get one at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+- **Docker** (for production deployment with container sandbox isolation)
 - No other API keys needed — all tools work with free APIs
 
 ### Install Dependencies
@@ -189,17 +190,81 @@ curl -X POST http://localhost:8000/api/research \
 | `[subagent]` | Max steps, timeout per SubAgent |
 | `[output]` | Report/trajectory saving, verbosity |
 
-### Sandbox Levels
+### Sandbox Backends
+
+FlyAgent supports two sandbox backends for SubAgent isolation:
+
+| Backend | Isolation | Use Case |
+|---------|-----------|----------|
+| `local` | tmpdir + regex blocklist | Development, single-user |
+| `docker` | Full container isolation | **Production, multi-user deployment** |
+
+#### Docker Sandbox (Recommended for Deployment)
+
+Each sandboxed SubAgent runs in its own Docker container with:
+
+- **Read-only root filesystem** — agents can't modify system files
+- **Bind-mounted `/workspace`** — only the task workspace is writable
+- **Resource limits** — memory, CPU, and PID limits per container
+- **Network isolation** — `--network none` when `allow_network = false`
+- **No privilege escalation** — `--security-opt no-new-privileges`
+- **Full agent freedom** — no regex blocklist needed, the container IS the jail
+
+```bash
+# 1. Build the sandbox image (one-time)
+docker build -f sandbox.Dockerfile -t flyagent-sandbox:latest .
+
+# 2. Set backend in config.toml
+# backend = "docker"    ← already the default
+```
 
 ```toml
 [sandbox]
-level = "standard"           # "strict" | "standard" | "permissive"
-allow_network = true
+level = "standard"               # "strict" | "standard" | "permissive"
+backend = "docker"               # "local" | "docker"
+docker_image = "flyagent-sandbox:latest"
+docker_memory = "512m"           # Per-container memory limit
+docker_cpus = 1.0                # Per-container CPU limit
+allow_network = true             # false → --network none (total isolation)
 allow_shell = true
 allow_file_write = true
 allow_package_install = true
 working_dir = "./workspace"
 ```
+
+**How it works:**
+
+```
+SubAgent (sandboxed=true)
+    │
+    ▼
+┌─────────────────────────────────────────────┐
+│  Docker Container (flyagent_sbx_{id})       │
+│  ┌──────────────────────────────────────┐   │
+│  │ /workspace (bind mount ← host tmpdir)│   │  ← Only writable directory
+│  └──────────────────────────────────────┘   │
+│  • Read-only root filesystem                │
+│  • --memory 512m --cpus 1.0 --pids-limit 100│
+│  • --network none (when disabled)           │
+│  • shell_exec → docker exec bash -c "..."   │
+│  • python_exec → docker exec python3 -c "." │
+│  • Non-root user (agent)                    │
+└─────────────────────────────────────────────┘
+    │
+    ▼
+Outputs collected via host bind mount → cleanup → docker rm -f
+```
+
+**Multi-user capacity:** 20 users × 3 concurrent SubAgents = ~60 containers. Docker handles this trivially.
+
+#### Local Sandbox (Development)
+
+```toml
+[sandbox]
+backend = "local"      # tmpdir + regex blocklist, no Docker required
+```
+
+Uses a temporary directory with command validation patterns. Suitable for single-user development but not production.
 
 ### Environment Variables (`.env`)
 
