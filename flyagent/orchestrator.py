@@ -1,7 +1,8 @@
-"""Orchestrator (MainAgent) — decomposes queries and spawns SubAgents on the fly.
+"""Orchestrator (MainAgent) — decomposes tasks and spawns SubAgents on the fly.
 
-Implements the ICTM framework from AOrchestra. Emits events via EventBus
-for real-time UI streaming and logs via OTEL-compliant structured logging.
+Implements the ICTM framework from AOrchestra. Supports multiple task modes:
+research, coding, automation, general. Emits events via EventBus for real-time
+UI streaming and logs via OTEL-compliant structured logging.
 """
 
 from __future__ import annotations
@@ -152,7 +153,10 @@ def _format_subtask_history(entries: list[TaskEntry]) -> str:
 
 
 class Orchestrator:
-    """MainAgent that orchestrates research via dynamic SubAgent creation."""
+    """MainAgent that orchestrates tasks via dynamic SubAgent creation.
+
+    Supports task modes: research, coding, automation, general.
+    """
 
     def __init__(self, config: AppConfig, event_bus: Any | None = None):
         self.config = config
@@ -176,9 +180,11 @@ class Orchestrator:
         model_cfg = self.config.get_model(self.config.orchestrator.model_tier)
         task_entries: list[TaskEntry] = []
 
+        task_mode = self.config.orchestrator.task_mode
+
         logger.info(
-            "Starting research",
-            extra={"research_id": research_id, "agent_type": "orchestrator"},
+            "Starting task",
+            extra={"research_id": research_id, "agent_type": "orchestrator", "task_mode": task_mode},
         )
 
         await self._emit(research_id, "orchestrator_started", {
@@ -186,19 +192,21 @@ class Orchestrator:
             "model": model_cfg.model,
             "model_tier": self.config.orchestrator.model_tier,
             "max_attempts": max_attempts,
+            "task_mode": task_mode,
             "tools": self.tool_registry.all_names,
         })
 
         console.print(Panel(
-            f"[bold]Query:[/bold] {query}\n"
-            f"[dim]Model: {model_cfg.model} | Max attempts: {max_attempts}[/dim]",
-            title="FlyAgent Research Orchestrator",
+            f"[bold]Task:[/bold] {query}\n"
+            f"[dim]Mode: {task_mode} | Model: {model_cfg.model} | Max attempts: {max_attempts}[/dim]",
+            title="FlyAgent Sandbox Orchestrator",
             style="blue",
         ))
 
         sys_prompt = build_system_prompt(
             tool_descriptions=self.tool_registry.describe_all(),
-            research_depth=self.config.orchestrator.research_depth,
+            task_mode=task_mode,
+            task_depth=self.config.orchestrator.task_depth,
         )
         model = create_model(model_cfg, system_instruction=sys_prompt)
         chat = model.start_chat(history=[])
@@ -221,7 +229,7 @@ class Orchestrator:
                 max_attempts=max_attempts,
                 subtask_count=len(task_entries),
                 min_subtasks=self.config.orchestrator.min_subtasks,
-                research_depth=self.config.orchestrator.research_depth,
+                task_depth=self.config.orchestrator.task_depth,
             )
 
             try:
@@ -302,17 +310,20 @@ class Orchestrator:
             # ── delegate_task ──
             if action == "delegate_task":
                 subagent_idx = len(task_entries) + 1
+                sandboxed = params.get("sandboxed", False)
                 ictm = ICTM(
                     instruction=params.get("task_instruction", ""),
                     context=params.get("context", ""),
                     tools=params.get("tools", []),
                     model_tier=params.get("model_tier", "balanced"),
+                    sandboxed=sandboxed,
                 )
                 entry = TaskEntry(attempt=attempt, ictm=ictm)
                 task_entries.append(entry)
 
+                sbx_label = " [SANDBOXED]" if sandboxed else ""
                 logger.info(
-                    f"Spawning SubAgent #{subagent_idx}: {ictm.instruction[:80]}",
+                    f"Spawning SubAgent #{subagent_idx}{sbx_label}: {ictm.instruction[:80]}",
                     extra={"research_id": research_id, "agent_type": "orchestrator", "agent_id": f"sub_{subagent_idx}"},
                 )
                 await self._emit(research_id, "subagent_created", {
@@ -321,12 +332,13 @@ class Orchestrator:
                     "context": ictm.context[:200],
                     "tools": ictm.tools,
                     "model_tier": ictm.model_tier,
+                    "sandboxed": sandboxed,
                     "max_steps": self.config.subagent.max_steps,
                 })
 
                 console.print(Panel(
                     f"[bold]{ictm.instruction[:120]}[/bold]\n"
-                    f"[dim]Model: {ictm.model_tier} | Tools: {ictm.tools}[/dim]",
+                    f"[dim]Model: {ictm.model_tier} | Tools: {ictm.tools}{sbx_label}[/dim]",
                     title=f"SubAgent #{subagent_idx}",
                     style="cyan",
                 ))
@@ -374,8 +386,8 @@ class Orchestrator:
             return result
 
         # Budget exhausted
-        partial = "# Research Report (Partial)\n\n"
-        partial += f"**Query:** {query}\n\n"
+        partial = "# Task Report (Partial — budget exhausted)\n\n"
+        partial += f"**Task:** {query}\n\n"
         for i, e in enumerate(task_entries, 1):
             r = e.result
             partial += f"## Finding {i}\n**Task:** {e.ictm.instruction}\n\n"
@@ -414,7 +426,8 @@ class Orchestrator:
                     {
                         "attempt": e.attempt,
                         "ictm": {"instruction": e.ictm.instruction, "context": e.ictm.context[:500],
-                                 "tools": e.ictm.tools, "model_tier": e.ictm.model_tier},
+                                 "tools": e.ictm.tools, "model_tier": e.ictm.model_tier,
+                                 "sandboxed": e.ictm.sandboxed},
                         **({"result": {"findings": e.result.findings[:2000],
                                        "sources": e.result.sources, "steps_taken": e.result.steps_taken,
                                        "elapsed_seconds": e.result.elapsed_seconds,

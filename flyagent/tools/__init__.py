@@ -73,6 +73,30 @@ def _make_datetime(cfg):
     return create_tool(cfg)
 
 
+@_register("shell_exec")
+def _make_shell_exec(cfg):
+    from flyagent.tools.shell_exec import create_tool
+    return create_tool(cfg)
+
+
+@_register("file_edit")
+def _make_file_edit(cfg):
+    from flyagent.tools.file_edit import create_tool
+    return create_tool(cfg)
+
+
+@_register("file_list")
+def _make_file_list(cfg):
+    from flyagent.tools.file_list import create_tool
+    return create_tool(cfg)
+
+
+@_register("grep_search")
+def _make_grep_search(cfg):
+    from flyagent.tools.grep_tool import create_tool
+    return create_tool(cfg)
+
+
 # ── Public API ────────────────────────────────────────────────
 
 class ToolInfo:
